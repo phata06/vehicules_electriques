@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Planification de voyages pour véhicules électriques</title>
+  <title>Véhicules électriques</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=default"></script>
+  
+  <!-- Assurez-vous de remplacer 'VOTRE_CLE_API' par votre clé d'API Google Maps 
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCTTodAmxdBEaEAfe9ntfpPQIK0FqzkssU&callback=initialize" async defer></script>    -->
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCTTodAmxdBEaEAfe9ntfpPQIK0FqzkssU&libraries=geometry&callback=initialize" async defer></script>
+  <style>
+    .green-text {
+  color: green;
+}
+  </style>
+  
+</head>
+<body>
+  <h1>Carte des Stations de Recharge</h1>
+  <div id="map" style="height: 500px; width: 100%;"></div>
+
+<!-- Inclure la liste des véhicules quelque part dans map.html -->
+ 
+
+<div  id="vehicleContainer">
+  <div id="vehicleTitle">
+      <h3>Liste des Véhicules Électriques</h3>
+  </div>
+<div id="vehicleSelectContainer">
+  <select id="vehicleSelect">
+      <!-- Les options seront ajoutées dynamiquement par le code JavaScript -->
+  </select>
+</div>
+</div>
+
+</div>
+<ul id="vehicleList">
+  <!-- La liste des véhicules sera affichée ici -->
+</ul>
+
+
+
+
+
+
+  
+  <!-- Formulaire pour entrer le point de départ et la destination -->
+ 
+<form id="routeForm" action="" method="post" onsubmit="event.preventDefault(); calculateAndDisplayRoute();">
+    <label for="start">Origine:</label>
+    <input type="text" size="20" class="form-control" id="start" name="start"  required>
+    {% for error in form.start.errors %}
+    <span style="color: red;">{{ error }}</span>
+    {% endfor %}
+
+    <label for="end">Destination:</label>
+    <input type="text" size="20" class="form-control" id="end" name="end"  required>
+    {% for error in form.end.errors %}
+    <span style="color: red;">{{ error }}</span>
+    {% endfor %}
+
+    <label for="battery_autonomy">Autonomie de la batterie (km):</label>
+    <input type="number" class="form-control" id="battery_autonomy" name="battery_autonomy" required>
+
+
+    <!-- Ajoutez le champ de vitesse ici -->
+    <label for="speed">Vitesse (km/h):</label>
+    <input type="number" class="form-control" id="speed" name="speed" required>
+    <input type="submit" class="btn btn-primary" value="Calculer l’itinéraire">
+</form>
+<div id="distanceDisplay">
+    Distance: <span id="distanceValue">Calculating...</span> km
+</div>
+
+<div id="timeDisplay">
+    Temps de trajet estimé: <span id="timeValue">Calculating...</span>
+</div>
+
+
+  
+<script>
+let map;
+    let directionsService; 
+    let directionsRenderer;
+    //fonction pour initialiser la carte
+    function initialize() {
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer();
+      initMap();
+      const startInput = document.getElementById('start');
+    const startAutocomplete = new google.maps.places.Autocomplete(startInput);
+    const endInput = document.getElementById('end');
+    const endAutocomplete = new google.maps.places.Autocomplete(endInput);
+      
+    }
+    
+    function initMap() {
+      map = new google.maps.Map(document.getElementById('map'), {
+          center: {lat: -34.397, lng: 150.644},
+          zoom: 8
+      });
+      directionsRenderer.setMap(map);
+    }
+
+    // fonction pour afficher l'itinéraire 
+    function calculateAndDisplayRoute() {
+      const start = document.getElementById('start').value;
+      const end = document.getElementById('end').value;
+      const speed = parseFloat(document.getElementById('speed').value);
+      const waypoints = [];
+
+
+      directionsService.route({
+        origin: start,
+        destination: end,
+        //waypoints: [{ location: borneRechargeLatLng, stopover: true }], //borne optimale
+        travelMode: google.maps.TravelMode.DRIVING
+      }, function(response, status) {
+        if (status === 'OK') {
+          directionsRenderer.setDirections(response);
+          const routePath = response.routes[0].overview_path;
+
+        // Calculer le temps de trajet en heures, minutes et secondes
+        
+
+
+          let totalDistance = 0;
+            for (let i = 0; i < routePath.length - 1; i++) {
+                const startLocation = routePath[i];
+                const endLocation = routePath[i + 1];
+                const distance = google.maps.geometry.spherical.computeDistanceBetween(startLocation, endLocation);
+                totalDistance += distance;
+            }
+
+             // Récupérer l'autonomie de la batterie
+            const batteryAutonomy = parseInt(document.getElementById('battery_autonomy').value);
+            
+            
+
+
+            const timeInSeconds = (totalDistance / (speed * 1000 / 3600)); // Temps en secondes
+            const hours = Math.floor(timeInSeconds / 3600);
+            const minutes = Math.floor((timeInSeconds % 3600) / 60);
+            const seconds = Math.round(timeInSeconds % 60);
+
+            const timeValue = document.getElementById('timeValue');
+            timeValue.textContent = `${hours} h ${minutes} min ${seconds} sec`;
+
+
+            const distanceValue = document.getElementById('distanceValue');
+            distanceValue.textContent = (totalDistance / 1000).toFixed(2); // Convertir en kilomètres et arrondir à 2 décimales
+           
+            
+            
+          fetch('/static/bornes.json') // Ajustez le chemin si nécessaire
+            .then(response => {
+              if (!response.ok) {
+                throw new Error('Network response was not ok');
+              }
+              return response.json();
+            })
+            //.then(response => response.json())
+            .then(data => {
+              const bestStation = findNearestChargingStation(routePath, data, batteryAutonomy);
+              // Filtrer les stations ici en utilisant la fonction filterStations
+              stationsDeRechargeLeLongDeItinéraire = filterStations(data, routePath);
+              findNearestChargingStation(routePath, data, batteryAutonomy);
+              addStationsToMap(stationsDeRechargeLeLongDeItinéraire);
+
+              
+
+
+            })
+            .catch(error => {
+              console.error('Erreur lors de la récupération des stations de recharge :', error);
+            });
+        } else {
+          window.alert('La demande d\'itinéraire a échoué en raison de ' + status);
+          console.log("L'autonomie est suffisante pour couvrir la distance");
+        }
+      });
+    }
+
+    function filterStations(stations, routePath) {
+      return stations.filter(station => {
+        const stationPos = new google.maps.LatLng(station.ylatitude, station.xlongitude);
+        return routePath.some(point => {
+          const pathPoint = new google.maps.LatLng(point.lat(), point.lng());
+          const distance = google.maps.geometry.spherical.computeDistanceBetween(pathPoint, stationPos);
+          return distance < 5000; // Par exemple, moins de 5 km de l'itinéraire
+        });
+      });
+    }
+
+    function addStationsToMap(stations) {
+      // Vérifiez si stations est défini et n'est pas vide
+      if (stations && stations.length > 0) {
+        stations.forEach(station => {
+          const position = new google.maps.LatLng(station.ylatitude, station.xlongitude);
+          const marker = new google.maps.Marker({
+            position: position,
+            map: map,
+            title: station.n_station // Ou toute autre propriété que vous souhaitez afficher comme titre
+          });
+        });
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initialize); // Assurez-vous que initialize est appelé au chargement
+
+    function loadScript() {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src = 'https://maps.googleapis.com/maps/api/js?key=AIzaSyCTTodAmxdBEaEAfe9ntfpPQIK0FqzkssU&libraries=geometry&callback=initialize';
+  document.body.appendChild(script);
+}
+
+window.onload = loadScript;
+
+
+
+  document.addEventListener('DOMContentLoaded', function() {
+    initialize();
+    loadVehicles();
+//   });
+// // RouteForm
+// document.addEventListener('DOMContentLoaded', function () {
+    // fetch('/api/vehicles')
+    //     .then(response => response.json())
+    //     .then(vehicles => {
+    //         const selectElement = document.getElementById('vehicleSelect');
+    //         vehicles.forEach(vehicle => {
+    //             const option = document.createElement('option');
+    //             option.value = vehicle.id;
+    //             option.text = `${vehicle.name} - Batterie: ${vehicle.battery_usable_kwh} kWh - Vitesse de Charge: ${vehicle.charge_speed} km/h`;
+    //             selectElement.appendChild(option);
+    //         });
+    //     })
+    //     .catch(error => console.error('Erreur lors de la récupération des voitures:', error));
+});
+
+
+
+
+
+function findNearestChargingStation(routePath, stations, batteryAutonomy) {
+    let bestStation = null;
+    let maxDistance = 5000;
+    
+    stations.forEach(station => {
+        const stationPos = new google.maps.LatLng(station.ylatitude, station.xlongitude);
+
+        routePath.forEach(point => {
+            const pathPoint = new google.maps.LatLng(point.lat(), point.lng());
+            const distance = google.maps.geometry.spherical.computeDistanceBetween(pathPoint, stationPos);
+
+            // Trouver la station la plus éloignée mais à moins de l'autonomie de la batterie
+            if (distance > maxDistance && distance < batteryAutonomy * 1000) {
+                maxDistance = distance;
+                bestStation = station;
+            }
+        });
+    });
+
+    if (bestStation) {
+        // Afficher un marqueur pour la station choisie
+        const optimalStationMarker = createOptimalStationMarker(bestStation);
+        const bestStationPos = new google.maps.LatLng(bestStation.ylatitude, bestStation.xlongitude);
+        // const bestStationMarker = new google.maps.Marker({
+        //     position: bestStationPos,
+        //     map: map,
+        //     title: "Station de Recharge Optimale"
+        // });
+        
+
+        // Afficher les détails de la station
+        displayStationDetails(bestStation);
+    }
+     return bestStation;
+}
+function displayStationDetails(station) {
+    const stationDetailsElement = document.getElementById('stationDetails');
+     stationDetailsElement.innerHTML = `
+         <h3 class="green-text">Station de Recharge Optimale</h3>
+         <p class="green-text">Adresse: ${station.ad_station}</p>
+         <p class="green-text">Accès: ${station.acces_recharge}</p>
+         <p class="green-text">Accessibilité: ${station.accessibilite}</p>
+        
+     `;
+}
+
+
+function createOptimalStationMarker(station) {
+    const stationPos = new google.maps.LatLng(station.ylatitude, station.xlongitude);
+
+    // Créer un marqueur personnalisé
+    const marker = new google.maps.Marker({
+        position: stationPos,
+        map: map,
+        // title: "Station de Recharge Optimale",
+        // icon: {
+        //     url: "icon.jpeg", // Remplacez par le chemin de votre icône
+        //     scaledSize: new google.maps.Size(50, 50) // Taille de l'icône
+        // }
+    });
+
+    return marker;
+}
+
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    fetch('/api/vehicles')
+        .then(response => response.json())
+        .then(vehicles => {
+            const selectElement = document.getElementById('vehicleSelect');
+            vehicles.forEach(vehicle => {
+                const option = document.createElement('option');
+                option.value = vehicle.id; // Assurez-vous que l'ID est unique pour chaque véhicule
+                option.text = `${vehicle.name} - Batterie: ${vehicle.battery_usable_kwh} kWh - Vitesse de Charge: ${vehicle.charge_speed} km/h`;
+                selectElement.appendChild(option);
+            });
+        })
+        .catch(error => console.error('Erreur lors de la récupération des voitures:', error));
+});
+
+</script>
+<script src="script.js"></script>
+<div id="stationDetails"></div>
+
+
+</html>
